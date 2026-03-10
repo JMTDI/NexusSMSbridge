@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NexusBridge</string>
+    <string name="channel_name">NexusBridge Connection</string>
+    <string name="notification_title">NexusBridge</string>
+    <string name="notification_connected">Connected — relaying messages</string>
+    <string name="notification_disconnected">Disconnected — reconnecting…</string>
+    <string name="btn_disconnect">Disconnect</string>
+    <string name="btn_connect">Connect</string>
+    <string name="btn_scan_qr">Scan QR Code</string>
+    <string name="btn_reconnect">Reconnect</string>
+</resources>

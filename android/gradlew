@@ -1,0 +1,254 @@
+#!/bin/sh
+#
+# NexusBridge - Gradle start script for UN*X
+# Auto-downloads gradle-wrapper.jar if missing.
+# Auto-selects Java 21/17 when Java 25+ is detected (Groovy DSL incompatibility).
+#
+
+# Resolve APP_HOME
+PRG="$0"
+while [ -h "$PRG" ]; do
+  ls=$(ls -ld "$PRG")
+  link=$(expr "$ls" : '.*-> \(.*\)$')
+  if expr "$link" : '/.*' > /dev/null; then
+    PRG="$link"
+  else
+    PRG=$(dirname "$PRG")"/$link"
+  fi
+done
+SAVED="$(pwd)"
+cd "$(dirname "$PRG")/" >/dev/null
+APP_HOME="$(pwd -P)"
+cd "$SAVED" >/dev/null
+
+APP_NAME="Gradle"
+APP_BASE_NAME=$(basename "$0")
+
+# ─── Auto-download gradle-wrapper.jar if missing ──────────────────────────────
+WRAPPER_JAR="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
+if [ ! -f "$WRAPPER_JAR" ]; then
+    echo "gradle-wrapper.jar not found. Downloading..."
+    mkdir -p "$APP_HOME/gradle/wrapper"
+    JAR_URL="https://github.com/gradle/gradle/raw/v8.0.2/gradle/wrapper/gradle-wrapper.jar"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$WRAPPER_JAR" "$JAR_URL"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$WRAPPER_JAR" "$JAR_URL"
+    else
+        echo "ERROR: curl or wget is required to download gradle-wrapper.jar" >&2
+        exit 1
+    fi
+    echo "gradle-wrapper.jar downloaded successfully."
+fi
+
+# ─── Find or download a compatible Java (Groovy DSL requires JDK ≤ 21) ───────
+JDK21_DIR="$HOME/.nexusbridge-jdk/jdk-21"
+
+# Returns 0 (true) if the java at $1/bin/java reports version ≤ 21
+is_compat_java() {
+    local BIN="$1/bin/java"
+    [ -x "$BIN" ] || return 1
+    local V=$("$BIN" -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d'.' -f1)
+    [ -n "$V" ] && [ "$V" -ge 1 ] && [ "$V" -le 21 ] 2>/dev/null
+}
+
+download_jdk21() {
+    echo "[gradlew] Downloading JDK 21 from Adoptium (~190 MB)..."
+    mkdir -p "$HOME/.nexusbridge-jdk"
+    case "$(uname -m)" in aarch64) ARCH_TAG="aarch64" ;; *) ARCH_TAG="x64" ;; esac
+    case "$(uname)"    in Darwin*)  OS_TAG="mac"       ;; *) OS_TAG="linux"  ;; esac
+    DL_URL="https://api.adoptium.net/v3/binary/latest/21/ga/${OS_TAG}/${ARCH_TAG}/jdk/hotspot/normal/eclipse"
+    TMP_TAR="$HOME/.nexusbridge-jdk/jdk21.tar.gz"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -L -o "$TMP_TAR" "$DL_URL" || return 1
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$TMP_TAR" "$DL_URL" || return 1
+    else
+        echo "[gradlew] ERROR: curl or wget required." >&2; return 1
+    fi
+    mkdir -p "$JDK21_DIR"
+    tar -xzf "$TMP_TAR" -C "$JDK21_DIR" --strip-components=1 || return 1
+    rm -f "$TMP_TAR"
+    echo "[gradlew] JDK 21 installed at $JDK21_DIR"
+}
+
+find_compat_java() {
+    # 1. Previously downloaded copy
+    is_compat_java "$JDK21_DIR" && echo "$JDK21_DIR" && return 0
+
+    # 2. SDKMAN candidates — scan all installed versions, pick highest ≤ 21
+    SDKMAN_JAVA="/usr/local/sdkman/candidates/java"
+    if [ -d "$SDKMAN_JAVA" ]; then
+        for DIR in "$SDKMAN_JAVA"/21.* "$SDKMAN_JAVA"/21 \
+                   "$SDKMAN_JAVA"/17.* "$SDKMAN_JAVA"/17 \
+                   "$SDKMAN_JAVA"/11.* "$SDKMAN_JAVA"/11; do
+            is_compat_java "$DIR" && echo "$DIR" && return 0
+        done
+    fi
+
+    # 3. Common system paths (each version-checked)
+    for CANDIDATE in \
+        "/usr/lib/jvm/java-21-openjdk-amd64" \
+        "/usr/lib/jvm/java-21-openjdk-arm64" \
+        "/usr/lib/jvm/java-21-openjdk" \
+        "/usr/lib/jvm/java-21" \
+        "/usr/lib/jvm/java-17-openjdk-amd64" \
+        "/usr/lib/jvm/java-17-openjdk-arm64" \
+        "/usr/lib/jvm/java-17-openjdk" \
+        "/usr/lib/jvm/java-17" \
+        "/usr/lib/jvm/java-11-openjdk-amd64" \
+        "/usr/lib/jvm/java-11-openjdk" \
+        "$JAVA_HOME_21" "$JAVA_HOME_17"; do
+        is_compat_java "$CANDIDATE" && echo "$CANDIDATE" && return 0
+    done
+
+    # 4. update-alternatives
+    for V in 21 17 11; do
+        ALT=$(update-alternatives --list java 2>/dev/null | grep "java-$V" | head -1)
+        if [ -n "$ALT" ]; then
+            DIR="$(dirname "$(dirname "$ALT")")"
+            is_compat_java "$DIR" && echo "$DIR" && return 0
+        fi
+    done
+
+    # 5. Scan all of /usr/lib/jvm
+    for DIR in /usr/lib/jvm/*/; do
+        is_compat_java "$DIR" && echo "$DIR" && return 0
+    done
+
+    # 6. Auto-download from Adoptium
+    download_jdk21 && echo "$JDK21_DIR" && return 0
+    return 1
+}
+
+# ─── Determine the Java command to use ───────────────────────────────────────
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVACMD="$JAVA_HOME/bin/java"
+else
+    JAVACMD="java"
+fi
+
+# Check Java version — Groovy DSL in Gradle 8.x requires JDK ≤ 21
+JAVA_VER=$("$JAVACMD" -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d'.' -f1)
+if [ -n "$JAVA_VER" ] && [ "$JAVA_VER" -ge 22 ] 2>/dev/null; then
+    echo "[gradlew] Java $JAVA_VER detected — Groovy DSL requires ≤ 21. Finding compatible JDK..."
+    COMPAT_HOME=$(find_compat_java)
+    if [ -n "$COMPAT_HOME" ]; then
+        echo "[gradlew] Using: $COMPAT_HOME"
+        export JAVA_HOME="$COMPAT_HOME"
+        JAVACMD="$JAVA_HOME/bin/java"
+    else
+        echo "ERROR: Could not find or download a compatible JDK (21 or 17)." >&2; exit 1
+    fi
+fi
+
+command -v "$JAVACMD" >/dev/null 2>&1 || { echo "ERROR: no 'java' found in PATH." >&2; exit 1; }
+
+# ─── Auto-write local.properties with Android SDK path ───────────────────────
+LOCAL_PROPS="$APP_HOME/local.properties"
+detect_android_sdk() {
+    # 1. Environment variables
+    for E in "$ANDROID_HOME" "$ANDROID_SDK_ROOT"; do
+        [ -d "$E/platforms" ] && echo "$E" && return 0
+    done
+    # 2. Locate via adb binary (always inside SDK/platform-tools/adb)
+    ADB_PATH=$(command -v adb 2>/dev/null)
+    if [ -n "$ADB_PATH" ]; then
+        # adb is at <sdk>/platform-tools/adb
+        MAYBE="$(dirname "$(dirname "$ADB_PATH")")"
+        [ -d "$MAYBE/platforms" ] && echo "$MAYBE" && return 0
+    fi
+    # 3. Common fixed paths
+    for C in \
+        "/usr/local/lib/android/sdk" \
+        "/usr/local/android-sdk" \
+        "/opt/android-sdk" \
+        "/opt/android/sdk" \
+        "$HOME/Android/Sdk" \
+        "$HOME/android-sdk" \
+        "$HOME/Library/Android/sdk" \
+        "/usr/lib/android-sdk"; do
+        [ -d "$C/platforms" ] && echo "$C" && return 0
+    done
+    # 4. Search common parent dirs for platform-tools/adb
+    for SEARCH in /usr/local /opt /home/codespace "$HOME"; do
+        FOUND=$(find "$SEARCH" -maxdepth 5 -name "adb" -type f 2>/dev/null | head -1)
+        if [ -n "$FOUND" ]; then
+            MAYBE="$(dirname "$(dirname "$FOUND")")"
+            [ -d "$MAYBE/platforms" ] && echo "$MAYBE" && return 0
+        fi
+    done
+    return 1
+}
+
+SDK_DIR=$(detect_android_sdk)
+if [ -n "$SDK_DIR" ]; then
+    # Always update local.properties with the detected (real) path
+    printf "sdk.dir=%s\n" "$SDK_DIR" > "$LOCAL_PROPS"
+    echo "[gradlew] sdk.dir=$SDK_DIR"
+else
+    echo "[gradlew] ERROR: Android SDK not found." >&2
+    echo "[gradlew] Run: find / -name 'adb' -type f 2>/dev/null | head -3" >&2
+    echo "[gradlew] Then: echo 'sdk.dir=/path/to/sdk' > local.properties" >&2
+    exit 1
+fi
+
+# ─── JVM options ─────────────────────────────────────────────────────────────
+DEFAULT_JVM_OPTS="-Xmx64m -Xms64m"
+
+# Use the maximum available, or set MAX_FD != -1 to use that value.
+MAX_FD="maximum"
+warn() {
+    echo "$*"
+}
+die() {
+    echo
+    echo "$*"
+    echo
+    exit 1
+}
+
+# OS specific support (must be 'true' or 'false').
+cygwin=false
+msys=false
+darwin=false
+nonstop=false
+case "$(uname)" in
+  CYGWIN* )  cygwin=true  ;;
+  Darwin* )  darwin=true  ;;
+  MSYS* | MINGW* ) msys=true ;;
+  NONSTOP* ) nonstop=true ;;
+esac
+
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+
+# Attempt to set MAX_FD required by Cygwin
+if ! "$cygwin" && ! "$darwin" && ! "$nonstop"; then
+    case $MAX_FD in
+        max*)
+            MAX_FD=$(ulimit -H -n) || warn "Could not query maximum file descriptor limit"
+            ;;
+    esac
+    case $MAX_FD in
+        '' | soft) :;;
+        *)
+            ulimit -n "$MAX_FD" || warn "Could not set maximum file descriptor limit to $MAX_FD"
+    esac
+fi
+
+# For Cygwin or MSYS, switch paths to Windows format before running java
+if "$cygwin" || "$msys"; then
+    APP_HOME=$(cygpath --path --mixed "$APP_HOME")
+    CLASSPATH=$(cygpath --path --mixed "$CLASSPATH")
+    JAVACMD=$(cygpath --unix "$JAVACMD")
+fi
+
+# ─── Execute Gradle ──────────────────────────────────────────────────────────
+exec "$JAVACMD" \
+    $DEFAULT_JVM_OPTS \
+    $JAVA_OPTS \
+    $GRADLE_OPTS \
+    "-Dorg.gradle.appname=$APP_BASE_NAME" \
+    -classpath "$CLASSPATH" \
+    org.gradle.wrapper.GradleWrapperMain \
+    "$@"

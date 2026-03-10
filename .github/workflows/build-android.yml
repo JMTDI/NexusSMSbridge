@@ -1,0 +1,100 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-android.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'android/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Java 21 ─────────────────────────────────────────────────────────────
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # ── Android SDK ──────────────────────────────────────────────────────────
+      - name: Install Android SDK
+        shell: powershell
+        working-directory: android
+        run: |
+          $SDK_DIR = "$env:USERPROFILE\.android\sdk"
+          $SDKMANAGER = "$SDK_DIR\cmdline-tools\latest\bin\sdkmanager.bat"
+
+          if (-not (Test-Path "$SDK_DIR\platform-tools\adb.exe")) {
+            Write-Host "Downloading Android cmdline-tools..."
+            $ZIP = "$env:TEMP\cmdline-tools.zip"
+            $EXTRACT = "$env:TEMP\cmdline-tools-extract"
+
+            & curl.exe -fsSL -o $ZIP "https://dl.google.com/android/repository/commandlinetools-win-12266719_latest.zip"
+
+            New-Item -ItemType Directory -Force -Path $EXTRACT | Out-Null
+            Expand-Archive -LiteralPath $ZIP -DestinationPath $EXTRACT -Force
+            New-Item -ItemType Directory -Force -Path "$SDK_DIR\cmdline-tools\latest" | Out-Null
+            Copy-Item "$EXTRACT\cmdline-tools\*" "$SDK_DIR\cmdline-tools\latest\" -Recurse -Force
+            Remove-Item $ZIP, $EXTRACT -Recurse -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "Android SDK already present at $SDK_DIR"
+          }
+
+          # Write license hashes directly — most reliable method for CI
+          $LICENSES_DIR = "$SDK_DIR\licenses"
+          New-Item -ItemType Directory -Force -Path $LICENSES_DIR | Out-Null
+          [System.IO.File]::WriteAllText(
+            "$LICENSES_DIR\android-sdk-license",
+            "`n8933bad161af4178b1185d1a37fbf41ea5269c55`nd56f5187479451eabf01fb78af6dfcb131a6481e`n24333f8a63b6825ea9c5514f83c2829b004d1fee"
+          )
+          [System.IO.File]::WriteAllText(
+            "$LICENSES_DIR\android-sdk-preview-license",
+            "`n84831b9409646a918e30573bab4c9c91346d8abd"
+          )
+          [System.IO.File]::WriteAllText(
+            "$LICENSES_DIR\android-sdk-arm-dbt-license",
+            "`n859f317696f67ef3d7f30a50a5560e7834b43903"
+          )
+
+          $env:ANDROID_HOME = $SDK_DIR
+          & $SDKMANAGER "platform-tools" "platforms;android-34" "build-tools;35.0.0"
+
+          $sdk_path = $SDK_DIR -replace '\\', '/'
+          "sdk.dir=$sdk_path" | Set-Content -Path "local.properties" -Encoding UTF8
+          "ANDROID_HOME=$SDK_DIR" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # ── Gradle cache ─────────────────────────────────────────────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.gradle\caches
+            ~\.gradle\wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Build debug APK
+        shell: powershell
+        working-directory: android
+        run: .\gradlew.bat assembleDebug --no-daemon --warning-mode all
+
+      # ── Upload artifact ───────────────────────────────────────────────────────
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

@@ -1,0 +1,5 @@
+# Server dependencies
+aiohttp>=3.9.0
+
+# Builder web app dependencies
+flask>=3.0.0

@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexusBridge</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0f1117;
+      --surface:    #1a1d27;
+      --surface2:   #222639;
+      --border:     #2e3148;
+      --accent:     #6c63ff;
+      --accent2:    #a78bfa;
+      --green:      #22c55e;
+      --red:        #ef4444;
+      --text:       #e2e8f0;
+      --text-muted: #94a3b8;
+      --bubble-out: #6c63ff;
+      --bubble-in:  #2e3148;
+      --radius:     12px;
+      --sidebar-w:  340px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    /* ── App Shell ─────────────────────────────────────────── */
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Header ────────────────────────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    #header svg { flex-shrink: 0; }
+    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    #header h1 span { color: var(--accent2); }
+
+    #conn-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    #status-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--red);
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+    #status-dot.connected { background: var(--green); }
+
+    /* ── Pairing Screen ────────────────────────────────────── */
+    #pairing-screen {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 32px;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    #pairing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      max-width: 440px;
+      width: 100%;
+    }
+
+    #pairing-card h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    #pairing-card p {
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    #qr-container {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 180px;
+      min-height: 180px;
+      position: relative;
+    }
+
+    #qr-spinner {
+      position: absolute;
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #pin-display {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: 10px;
+      color: var(--accent2);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #pairing-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    #pairing-spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .btn {
+      padding: 10px 24px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text-muted); }
+    .btn-danger {
+      background: transparent;
+      border: 1px solid var(--red);
+      color: var(--red);
+    }
+    .btn-danger:hover { background: #ef444422; }
+
+    /* ── Main App ──────────────────────────────────────────── */
+    #main-screen {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Reconnect Banner ──────────────────────────────────── */
+    #reconnect-banner {
+      display: none;
+      background: #7c3aed22;
+      border-bottom: 1px solid #7c3aed55;
+      padding: 10px 20px;
+      text-align: center;
+      color: var(--accent2);
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    #reconnect-banner.visible { display: block; }
+
+    /* ── Sidebar ───────────────────────────────────────────── */
+    #sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    #sidebar-header {
+      padding: 16px 16px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #sidebar-header h3 { font-size: 16px; font-weight: 700; }
+
+    #search-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      width: 100%;
+      transition: border-color 0.2s;
+    }
+    #search-input:focus { border-color: var(--accent); }
+    #search-input::placeholder { color: var(--text-muted); }
+
+    #conversations-list {
+      flex: 1;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    #conversations-list::-webkit-scrollbar { width: 5px; }
+    #conversations-list::-webkit-scrollbar-track { background: transparent; }
+    #conversations-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .conv-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .conv-item:hover { background: var(--surface2); }
+    .conv-item.active { background: var(--surface2); border-left: 3px solid var(--accent); }
+
+    .conv-avatar {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+    }
+
+    .conv-info { flex: 1; min-width: 0; }
+    .conv-name {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .conv-preview {
+      color: var(--text-muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .conv-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .conv-time { font-size: 11px; color: var(--text-muted); }
+    .unread-badge {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-weight: 700;
+      display: none;
+    }
+    .unread-badge.visible { display: block; }
+
+    #sidebar-empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    #sidebar-loading {
+      padding: 24px;
+      text-align: center;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* ── Thread View ───────────────────────────────────────── */
+    #thread-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    #thread-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #thread-header h2 { font-size: 16px; font-weight: 700; }
+    #thread-phone { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+    #btn-back {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      margin-right: 4px;
+    }
+    #btn-back:hover { color: var(--text); }
+
+    #messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    #messages-area::-webkit-scrollbar { width: 5px; }
+    #messages-area::-webkit-scrollbar-track { background: transparent; }
+    #messages-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    #thread-placeholder {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text-muted);
+      padding: 40px;
+      text-align: center;
+    }
+    #thread-placeholder svg { opacity: 0.3; }
+
+    .msg-bubble {
+      max-width: 72%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      line-height: 1.5;
+      word-break: break-word;
+      position: relative;
+    }
+    .msg-outgoing {
+      background: var(--bubble-out);
+      color: #fff;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .msg-outgoing.pending { opacity: 0.55; }
+    .msg-outgoing.sent-fail { background: #c0392b; }
+    .msg-outgoing.sent-ok::after {
+      content: " ✓";
+      font-size: 11px;
+      opacity: 0.8;
+    }
+    .msg-incoming {
+      background: var(--bubble-in);
+      color: var(--text);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+    .msg-time {
+      display: block;
+      font-size: 10px;
+      margin-top: 4px;
+      opacity: 0.65;
+      text-align: right;
+    }
+    .msg-date-divider {
+      align-self: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border-radius: 20px;
+      padding: 3px 14px;
+      margin: 8px 0;
+    }
+
+    #input-bar {
+      padding: 12px 16px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    #msg-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 10px 16px;
+      color: var(--text);
+      font-size: 14px;
+      resize: none;
+      outline: none;
+      max-height: 120px;
+      min-height: 44px;
+      line-height: 1.5;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    #msg-input:focus { border-color: var(--accent); }
+    #msg-input::placeholder { color: var(--text-muted); }
+
+    .icon-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    #btn-send {
+      background: var(--accent);
+      color: #fff;
+    }
+    #btn-send:hover { background: #5a52d5; }
+    #btn-attach {
+      background: var(--surface2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    #btn-attach:hover { color: var(--text); }
+
+    /* ── Toast ─────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1000;
+    }
+    .toast {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      min-width: 260px;
+      max-width: 360px;
+      box-shadow: 0 8px 24px #0006;
+      animation: slideIn 0.25s ease;
+      cursor: pointer;
+    }
+    .toast-sender { font-weight: 700; font-size: 13px; }
+    .toast-body { color: var(--text-muted); font-size: 12px; margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    /* ── Util ──────────────────────────────────────────────── */
+    .hidden { display: none !important; }
+
+    /* ── Responsive ────────────────────────────────────────── */
+    @media (max-width: 660px) {
+      :root { --sidebar-w: 100%; }
+      #sidebar { width: 100%; border-right: none; }
+      #thread-panel { position: absolute; inset: 0; top: 55px; }
+      #thread-panel.hidden-mobile { display: none; }
+      #btn-back { display: flex !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header id="header">
+    <!-- Signal/Bridge icon -->
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="3" fill="#6c63ff"/>
+      <path d="M7 14 C7 10.13 10.13 7 14 7" stroke="#6c63ff" stroke-width="2" stroke-linecap="round" fill="none"/>
+      <path d="M21 14 C21 10.13 17.87 7 14 7" stroke="#6c63ff" stroke-width="2" stroke-linecap="round" fill="none"/>
+      <path d="M3 14 C3 7.37 7.37 3 14 3" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.6"/>
+      <path d="M25 14 C25 7.37 20.63 3 14 3" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.6"/>
+      <line x1="14" y1="17" x2="8" y2="25" stroke="#6c63ff" stroke-width="2" stroke-linecap="round"/>
+      <line x1="14" y1="17" x2="20" y2="25" stroke="#6c63ff" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <h1>Nexus<span>Bridge</span></h1>
+    <div id="conn-status">
+      <div id="status-dot"></div>
+      <span id="status-text">Disconnected</span>
+      <button class="btn btn-danger" id="btn-disconnect" style="margin-left:12px;padding:6px 14px;font-size:12px;display:none">Disconnect</button>
+    </div>
+  </header>
+
+  <!-- PAIRING SCREEN -->
+  <div id="pairing-screen">
+    <div id="pairing-card">
+      <h2>Connect your Phone</h2>
+      <p>Scan the QR code with the NexusBridge Android app, or enter the PIN manually.</p>
+
+      <div id="qr-container">
+        <div id="qr-spinner"></div>
+        <div id="qr-code"></div>
+      </div>
+
+      <div id="pin-display">------</div>
+
+      <div id="pairing-status">
+        <div id="pairing-spinner"></div>
+        <span id="pairing-status-text">Waiting for phone...</span>
+      </div>
+
+      <button class="btn btn-ghost" id="btn-refresh">&#x21bb;  New Session</button>
+    </div>
+  </div>
+
+  <!-- MAIN SCREEN (hidden until paired) -->
+  <div id="main-screen" class="hidden">
+    <div id="reconnect-banner">
+      Phone disconnected — waiting for reconnection &nbsp;|&nbsp; PIN: <strong id="banner-pin"></strong>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <h3>Messages</h3>
+          <button id="btn-refresh-msgs" title="Refresh conversations" style="background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px" onclick="sendToPhone({type:'sms_list',payload:{}});this.textContent='↻ …';setTimeout(()=>this.textContent='↻',1500)">↻</button>
+        </div>
+        <input type="text" id="search-input" placeholder="Search conversations..." autocomplete="off" />
+      </div>
+      <div id="conversations-list">
+        <div id="sidebar-loading">
+          <div style="width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <span>Loading conversations...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- THREAD PANEL -->
+    <section id="thread-panel">
+      <!-- placeholder when no thread selected -->
+      <div id="thread-placeholder">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+          <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" stroke="#6c63ff" stroke-width="1.5" stroke-linejoin="round"/>
+          <circle cx="8" cy="11" r="1" fill="#6c63ff"/>
+          <circle cx="12" cy="11" r="1" fill="#6c63ff"/>
+          <circle cx="16" cy="11" r="1" fill="#6c63ff"/>
+        </svg>
+        <p>Select a conversation to start</p>
+      </div>
+
+      <!-- Active thread (hidden until selected) -->
+      <div id="thread-view" class="hidden" style="display:flex;flex-direction:column;height:100%;">
+        <div id="thread-header">
+          <button id="btn-back" aria-label="Back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div id="thread-avatar" class="conv-avatar" style="width:38px;height:38px;font-size:14px">?</div>
+          <div>
+            <h2 id="thread-contact-name">Contact</h2>
+            <div id="thread-phone">+1 000 000 0000</div>
+          </div>
+        </div>
+
+        <div id="messages-area"></div>
+
+        <div id="input-bar">
+          <button class="icon-btn" id="btn-attach" title="Attach file">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21.44 11.05L12.25 20.24a5.5 5.5 0 01-7.78-7.78l9.19-9.19a3.67 3.67 0 015.19 5.19L9.66 17.65a1.83 1.83 0 01-2.59-2.59l8.49-8.48" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <textarea id="msg-input" rows="1" placeholder="Type a message..."></textarea>
+          <button class="icon-btn" id="btn-send" title="Send">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+"use strict";
+
+// ── Config ──────────────────────────────────────────────────────────────────
+const SERVER_HTTP = "https://your.domain.com";
+const SERVER_WS   = "wss://your.domain.com";
+const POLL_INTERVAL = 2000; // ms — status polling while pairing
+
+// ── State ───────────────────────────────────────────────────────────────────
+let sessionToken = null;
+let sessionPin   = null;
+let ws           = null;
+let phoneConnected = false;
+let activeThreadId = null;
+let activeAddress  = null;
+
+// In-memory caches
+const conversationsCache = {};   // threadId → conversation object
+const threadsCache = {};         // threadId → messages array
+let conversationList = [];       // ordered list for sidebar
+
+// Polling
+let statusPollTimer = null;
+let reconnectTimer  = null;
+
+// ── DOM Refs ─────────────────────────────────────────────────────────────────
+const $pairingScreen   = document.getElementById("pairing-screen");
+const $mainScreen      = document.getElementById("main-screen");
+const $qrCode          = document.getElementById("qr-code");
+const $qrSpinner       = document.getElementById("qr-spinner");
+const $pinDisplay      = document.getElementById("pin-display");
+const $pairingStatus   = document.getElementById("pairing-status-text");
+const $pairingSpinner  = document.getElementById("pairing-spinner");
+const $btnRefresh      = document.getElementById("btn-refresh");
+const $statusDot       = document.getElementById("status-dot");
+const $statusText      = document.getElementById("status-text");
+const $btnDisconnect   = document.getElementById("btn-disconnect");
+const $reconnectBanner = document.getElementById("reconnect-banner");
+const $bannerPin       = document.getElementById("banner-pin");
+const $convList        = document.getElementById("conversations-list");
+const $searchInput     = document.getElementById("search-input");
+const $threadPlaceholder = document.getElementById("thread-placeholder");
+const $threadView      = document.getElementById("thread-view");
+const $messagesArea    = document.getElementById("messages-area");
+const $threadName      = document.getElementById("thread-contact-name");
+const $threadPhone     = document.getElementById("thread-phone");
+const $threadAvatar    = document.getElementById("thread-avatar");
+const $msgInput        = document.getElementById("msg-input");
+const $btnSend         = document.getElementById("btn-send");
+const $btnBack         = document.getElementById("btn-back");
+const $btnAttach       = document.getElementById("btn-attach");
+const $toastContainer  = document.getElementById("toast-container");
+
+// ── QR Code ──────────────────────────────────────────────────────────────────
+let qrInstance = null;
+
+function renderQR(data) {
+  $qrCode.innerHTML = "";
+  $qrSpinner.style.display = "none";
+  try {
+    qrInstance = new QRCode($qrCode, {
+      text: data,
+      width: 180,
+      height: 180,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  } catch (e) {
+    $qrCode.textContent = "QR unavailable";
+    console.error("QR error:", e);
+  }
+}
+
+// ── Session Management ───────────────────────────────────────────────────────
+async function createSession() {
+  $qrCode.innerHTML = "";
+  $qrSpinner.style.display = "block";
+  $pinDisplay.textContent = "------";
+  $pairingStatus.textContent = "Creating session...";
+
+  try {
+    const res = await fetch(`${SERVER_HTTP}/new-session`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    sessionToken = data.sessionToken;
+    sessionPin   = data.pin;
+
+    localStorage.setItem("nb_session_token", sessionToken);
+
+    $pinDisplay.textContent = sessionPin;
+    renderQR(data.qrData);
+    $pairingStatus.textContent = "Waiting for phone...";
+    $pairingSpinner.style.display = "";
+
+    startStatusPolling();
+  } catch (err) {
+    $qrSpinner.style.display = "none";
+    $pairingStatus.textContent = "Error creating session. Retrying...";
+    console.error("createSession error:", err);
+    setTimeout(createSession, 3000);
+  }
+}
+
+function startStatusPolling() {
+  stopStatusPolling();
+  statusPollTimer = setInterval(async () => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch(`${SERVER_HTTP}/session-status/${sessionToken}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.phoneConnected) {
+        stopStatusPolling();
+        onPhonePaired();
+      }
+    } catch (_) {}
+  }, POLL_INTERVAL);
+}
+
+function stopStatusPolling() {
+  if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null; }
+}
+
+// ── Pairing Success ──────────────────────────────────────────────────────────
+function onPhonePaired() {
+  stopStatusPolling();
+  $pairingScreen.classList.add("hidden");
+  $mainScreen.classList.remove("hidden");
+  $bannerPin.textContent = sessionPin;
+  $btnDisconnect.style.display = "";
+  connectWebSocket();
+}
+
+function disconnect() {
+  // Close WebSocket cleanly
+  if (ws) {
+    ws.onclose = null; // prevent auto-reconnect
+    ws.close();
+    ws = null;
+  }
+  clearTimeout(reconnectTimer);
+
+  // Clear stored session
+  localStorage.removeItem("nb_session_token");
+  sessionToken = null;
+  sessionPin   = null;
+  phoneConnected = false;
+  activeThreadId = null;
+  activeAddress  = null;
+
+  // Reset UI to pairing screen
+  $mainScreen.classList.add("hidden");
+  $pairingScreen.classList.remove("hidden");
+  $btnDisconnect.style.display = "none";
+  setConnectionStatus(false);
+  conversationList = [];
+
+  // Start fresh session
+  createSession();
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+let wsReconnectDelay = 1000;
+
+function connectWebSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+  const url = `${SERVER_WS}/ws/${sessionToken}?role=client`;
+  console.log("[WS] Connecting to", url);
+  ws = new WebSocket(url);
+
+  ws.addEventListener("open", () => {
+    console.log("[WS] Connected");
+    wsReconnectDelay = 1000;
+    setConnectionStatus(true);
+    // sms_list will be requested once server confirms phone is connected
+    // via connection_status or phone_connected message
+  });
+
+  ws.addEventListener("message", (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      handleServerMessage(msg);
+    } catch (e) {
+      console.warn("[WS] Non-JSON message:", evt.data);
+    }
+  });
+
+  ws.addEventListener("close", (evt) => {
+    console.warn("[WS] Disconnected", evt.code, evt.reason);
+    ws = null;
+    setConnectionStatus(false);
+    scheduleReconnect();
+  });
+
+  ws.addEventListener("error", (e) => {
+    console.error("[WS] Error:", e);
+  });
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  console.log(`[WS] Reconnecting in ${wsReconnectDelay}ms...`);
+  reconnectTimer = setTimeout(() => {
+    connectWebSocket();
+  }, wsReconnectDelay);
+  wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000);
+}
+
+function sendToPhone(msgObj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msgObj));
+  } else {
+    console.warn("[WS] Cannot send — not connected:", msgObj.type);
+  }
+}
+
+// ── Handle Incoming Messages ─────────────────────────────────────────────────
+function handleServerMessage(msg) {
+  const { type, payload } = msg;
+
+  switch (type) {
+    case "ping":
+      sendToPhone({ type: "pong", payload: {} });
+      break;
+
+    case "pong":
+      break;
+
+    case "connection_status":
+      if (payload.phoneConnected !== undefined) {
+        setPhoneStatus(payload.phoneConnected);
+        if (payload.phoneConnected && conversationList.length === 0) {
+          // Phone was already connected when we opened — request conversations
+          setTimeout(() => sendToPhone({ type: "sms_list", payload: {} }), 400);
+        }
+      }
+      break;
+
+    case "phone_connected":
+      setPhoneStatus(true);
+      showToast("NexusBridge", "Phone connected ✓");
+      // Short delay — phone needs a moment to be fully ready after WS open
+      setTimeout(() => sendToPhone({ type: "sms_list", payload: {} }), 800);
+      break;
+
+    case "phone_disconnected":
+      setPhoneStatus(false);
+      break;
+
+    case "sms_list":
+      handleSmsList(payload);
+      break;
+
+    case "sms_thread":
+      handleSmsThread(payload);
+      break;
+
+    case "sms_incoming":
+      handleIncomingSms(payload);
+      break;
+
+    case "contacts_list":
+      handleContactsList(payload);
+      break;
+
+    case "mms_attachment":
+      handleMmsAttachment(payload);
+      break;
+
+    case "sms_sent_ack":
+      handleSentAck(payload);
+      break;
+
+    case "read_receipt":
+      // Acknowledge
+      break;
+
+    default:
+      console.log("[MSG] Unhandled type:", type, payload);
+  }
+}
+
+// ── SMS List ─────────────────────────────────────────────────────────────────
+function handleSmsList(payload) {
+  const convs = payload.conversations || payload || [];
+  conversationList = convs;
+  convs.forEach(c => { conversationsCache[c.threadId] = c; });
+  renderConversationList(convs);
+}
+
+function renderConversationList(convs) {
+  if (!convs || convs.length === 0) {
+    $convList.innerHTML = `<div id="sidebar-empty" style="padding:40px 20px;text-align:center;color:var(--text-muted)">No conversations found.</div>`;
+    return;
+  }
+
+  const query = ($searchInput.value || "").toLowerCase();
+  const filtered = query
+    ? convs.filter(c =>
+        (c.displayName || c.address || "").toLowerCase().includes(query) ||
+        (c.snippet || "").toLowerCase().includes(query))
+    : convs;
+
+  $convList.innerHTML = "";
+  filtered.forEach(conv => {
+    const el = createConvItem(conv);
+    $convList.appendChild(el);
+  });
+}
+
+function createConvItem(conv) {
+  const div = document.createElement("div");
+  div.className = "conv-item" + (conv.threadId === activeThreadId ? " active" : "");
+  div.dataset.threadId = conv.threadId;
+  div.dataset.address = conv.address || "";
+
+  const initial = (conv.displayName || conv.address || "?")[0].toUpperCase();
+  const color = stringToColor(conv.displayName || conv.address || "");
+
+  div.innerHTML = `
+    <div class="conv-avatar" style="background:${color}">${escapeHtml(initial)}</div>
+    <div class="conv-info">
+      <div class="conv-name">${escapeHtml(conv.displayName || conv.address || "Unknown")}</div>
+      <div class="conv-preview">${escapeHtml(truncate(conv.snippet || "", 55))}</div>
+    </div>
+    <div class="conv-meta">
+      <div class="conv-time">${formatRelativeTime(conv.date)}</div>
+      <div class="unread-badge ${conv.unreadCount > 0 ? 'visible' : ''}">${conv.unreadCount || ""}</div>
+    </div>
+  `;
+
+  div.addEventListener("click", () => openThread(conv));
+  return div;
+}
+
+// ── Thread View ──────────────────────────────────────────────────────────────
+function openThread(conv) {
+  activeThreadId = conv.threadId;
+  activeAddress  = conv.address;
+
+  // Update active state in sidebar
+  document.querySelectorAll(".conv-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.threadId === String(conv.threadId));
+  });
+
+  // Zero unread badge in cache + DOM immediately
+  if (conversationsCache[conv.threadId]) {
+    conversationsCache[conv.threadId].unreadCount = 0;
+  }
+  const activeItem = document.querySelector(`.conv-item[data-thread-id="${conv.threadId}"]`);
+  if (activeItem) {
+    const badge = activeItem.querySelector(".unread-badge");
+    if (badge) { badge.textContent = ""; badge.classList.remove("visible"); }
+  }
+
+  const color = stringToColor(conv.displayName || conv.address || "");
+  const initial = (conv.displayName || conv.address || "?")[0].toUpperCase();
+  $threadAvatar.style.background = color;
+  $threadAvatar.textContent = initial;
+  $threadName.textContent = conv.displayName || conv.address || "Unknown";
+  $threadPhone.textContent = conv.address || "";
+
+  $threadPlaceholder.classList.add("hidden");
+  $threadView.classList.remove("hidden");
+
+  // Show cached or request from phone
+  if (threadsCache[conv.threadId]) {
+    renderMessages(threadsCache[conv.threadId]);
+  } else {
+    $messagesArea.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:24px">Loading messages...</div>`;
+    sendToPhone({ type: "sms_thread", payload: { threadId: conv.threadId } });
+  }
+
+  // On mobile: hide sidebar, show panel
+  if (window.innerWidth <= 660) {
+    document.getElementById("sidebar").classList.add("hidden");
+    document.getElementById("thread-panel").classList.remove("hidden-mobile");
+    $btnBack.style.display = "flex";
+  }
+
+  // Mark read on phone (only when connected and there was something unread)
+  if (phoneConnected && (conv.unreadCount > 0 || !conversationsCache[conv.threadId])) {
+    sendToPhone({ type: "read_receipt", payload: { threadId: conv.threadId } });
+  }
+}
+
+function handleSmsThread(payload) {
+  const threadId = payload.threadId;
+  const messages = payload.messages || [];
+  threadsCache[threadId] = messages;
+  if (String(threadId) === String(activeThreadId)) {
+    renderMessages(messages);
+  }
+}
+
+function renderMessages(messages) {
+  $messagesArea.innerHTML = "";
+  if (!messages || messages.length === 0) {
+    $messagesArea.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:24px">No messages in this thread.</div>`;
+    return;
+  }
+
+  let lastDate = null;
+  messages.forEach(msg => {
+    const msgDate = new Date(msg.date);
+    const dateStr = msgDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    if (dateStr !== lastDate) {
+      const divider = document.createElement("div");
+      divider.className = "msg-date-divider";
+      divider.textContent = dateStr;
+      $messagesArea.appendChild(divider);
+      lastDate = dateStr;
+    }
+    $messagesArea.appendChild(createBubble(msg));
+  });
+
+  scrollToBottom();
+}
+
+function createBubble(msg) {
+  const div = document.createElement("div");
+  const isOut = msg.type === 2 || msg.outgoing === true;
+  div.className = `msg-bubble ${isOut ? "msg-outgoing" : "msg-incoming"}`;
+  const timeStr = new Date(msg.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  div.innerHTML = `${escapeHtml(msg.body || "")}<span class="msg-time">${timeStr}</span>`;
+  return div;
+}
+
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    $messagesArea.scrollTop = $messagesArea.scrollHeight;
+  });
+}
+
+// ── Incoming SMS ─────────────────────────────────────────────────────────────
+function handleIncomingSms(payload) {
+  const { threadId, address, displayName, body, date } = payload;
+
+  // Update conversation list cache
+  if (conversationsCache[threadId]) {
+    conversationsCache[threadId].snippet = body;
+    conversationsCache[threadId].date = date;
+    if (String(threadId) !== String(activeThreadId)) {
+      conversationsCache[threadId].unreadCount = (conversationsCache[threadId].unreadCount || 0) + 1;
+    }
+  } else {
+    conversationsCache[threadId] = { threadId, address, displayName, snippet: body, date, unreadCount: 1 };
+  }
+
+  // Rebuild sorted list
+  conversationList = Object.values(conversationsCache).sort((a, b) => (b.date || 0) - (a.date || 0));
+  renderConversationList(conversationList);
+
+  // Append to thread cache and live view if open
+  const newMsg = { body, date, type: 1, outgoing: false };
+  if (!threadsCache[threadId]) threadsCache[threadId] = [];
+  threadsCache[threadId].push(newMsg);
+
+  if (String(threadId) === String(activeThreadId)) {
+    $messagesArea.appendChild(createBubble(newMsg));
+    scrollToBottom();
+  } else {
+    // Toast notification
+    showToast(displayName || address || "Unknown", body);
+  }
+}
+
+// ── Contacts ─────────────────────────────────────────────────────────────────
+function handleContactsList(payload) {
+  // Future use: enrich conversation display names
+  console.log("[CONTACTS] Received", (payload.contacts || []).length, "contacts");
+}
+
+// ── MMS Attachment ───────────────────────────────────────────────────────────
+function handleMmsAttachment(payload) {
+  const { threadId, messageId, mimeType, data } = payload;
+  if (String(threadId) === String(activeThreadId)) {
+    const div = document.createElement("div");
+    div.className = "msg-bubble msg-incoming";
+    if (mimeType && mimeType.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = `data:${mimeType};base64,${data}`;
+      img.style.cssText = "max-width:240px;border-radius:8px;display:block";
+      div.appendChild(img);
+    } else {
+      div.textContent = `[Attachment: ${mimeType}]`;
+    }
+    $messagesArea.appendChild(div);
+    scrollToBottom();
+  }
+}
+
+// ── Send SMS ─────────────────────────────────────────────────────────────────
+let _msgIdSeq = 0;
+function sendSms() {
+  const body = $msgInput.value.trim();
+  if (!body || !activeAddress) return;
+
+  const msgId = "m" + (++_msgIdSeq);
+  sendToPhone({ type: "sms_send", payload: { to: activeAddress, body, msgId } });
+
+  // Optimistic local append
+  const msg = { body, date: Date.now(), type: 2, outgoing: true };
+  if (!threadsCache[activeThreadId]) threadsCache[activeThreadId] = [];
+  threadsCache[activeThreadId].push(msg);
+  const bubble = createBubble(msg);
+  bubble.dataset.msgId = msgId;
+  bubble.classList.add("pending");
+  $messagesArea.appendChild(bubble);
+  scrollToBottom();
+
+  $msgInput.value = "";
+  $msgInput.style.height = "44px";
+}
+
+function handleSentAck(payload) {
+  const { msgId, success } = payload;
+  if (msgId) {
+    const bubble = $messagesArea.querySelector(`[data-msg-id="${msgId}"]`);
+    if (bubble) {
+      bubble.classList.remove("pending");
+      bubble.classList.add(success ? "sent-ok" : "sent-fail");
+    }
+  }
+  if (!success) showToast("Send failed", "Message could not be delivered.");
+}
+
+// ── Connection Status ─────────────────────────────────────────────────────────
+function setConnectionStatus(connected) {
+  $statusDot.classList.toggle("connected", connected);
+  $statusText.textContent = connected ? "Connected" : "Reconnecting...";
+  if (!connected) {
+    $reconnectBanner.classList.add("visible");
+  }
+}
+
+function setPhoneStatus(connected) {
+  phoneConnected = connected;
+  $statusDot.classList.toggle("connected", connected);
+  $statusText.textContent = connected ? "Phone Connected" : "Phone Offline";
+  $reconnectBanner.classList.toggle("visible", !connected);
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(sender, body) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `<div class="toast-sender">${escapeHtml(sender)}</div><div class="toast-body">${escapeHtml(body)}</div>`;
+  $toastContainer.appendChild(toast);
+
+  toast.addEventListener("click", () => toast.remove());
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 5000);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  const d = document.createElement("div");
+  d.appendChild(document.createTextNode(String(str || "")));
+  return d.innerHTML;
+}
+
+function truncate(str, n) {
+  return str.length > n ? str.slice(0, n) + "…" : str;
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return "";
+  const now = Date.now();
+  const diff = now - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function stringToColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  const colors = ["#6c63ff","#7c3aed","#2563eb","#0891b2","#059669","#d97706","#dc2626","#db2777"];
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// ── Event Listeners ───────────────────────────────────────────────────────────
+$btnRefresh.addEventListener("click", () => {
+  stopStatusPolling();
+  createSession();
+});
+
+$btnDisconnect.addEventListener("click", disconnect);
+
+$btnSend.addEventListener("click", sendSms);
+
+$msgInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendSms();
+  }
+});
+
+$msgInput.addEventListener("input", () => {
+  $msgInput.style.height = "44px";
+  $msgInput.style.height = Math.min($msgInput.scrollHeight, 120) + "px";
+});
+
+$searchInput.addEventListener("input", () => {
+  renderConversationList(conversationList);
+});
+
+$btnBack.addEventListener("click", () => {
+  document.getElementById("sidebar").classList.remove("hidden");
+  document.getElementById("thread-panel").classList.add("hidden-mobile");
+});
+
+$btnAttach.addEventListener("click", () => {
+  showToast("NexusBridge", "Attachments are sent from the Android app.");
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(function init() {
+  const savedToken = localStorage.getItem("nb_session_token");
+
+  if (savedToken) {
+    // Try to validate saved session
+    sessionToken = savedToken;
+    fetch(`${SERVER_HTTP}/session-status/${savedToken}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        sessionPin = data.pin;
+        if (data.phoneConnected) {
+          onPhonePaired();
+        } else {
+          // Session exists but phone not connected — show pairing screen with this session
+          $pinDisplay.textContent = data.pin;
+          fetch(`${SERVER_HTTP}/new-session`)
+            .then(r => r.json())
+            .then(d => {
+              sessionToken = d.sessionToken;
+              sessionPin = d.pin;
+              localStorage.setItem("nb_session_token", sessionToken);
+              $pinDisplay.textContent = d.pin;
+              renderQR(d.qrData);
+              $pairingStatus.textContent = "Waiting for phone...";
+              startStatusPolling();
+            });
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem("nb_session_token");
+        createSession();
+      });
+  } else {
+    createSession();
+  }
+})();
+</script>
+</body>
+</html>

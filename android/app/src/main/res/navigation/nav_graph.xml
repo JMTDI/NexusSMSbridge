@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/pairingFragment">
+
+    <fragment
+        android:id="@+id/pairingFragment"
+        android:name="com.nexusbridge.smsbridge.PairingFragment"
+        android:label="Pairing"
+        tools:layout="@layout/fragment_pairing">
+
+        <action
+            android:id="@+id/action_pairing_to_home"
+            app:destination="@id/homeFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.nexusbridge.smsbridge.HomeFragment"
+        android:label="Home"
+        tools:layout="@layout/fragment_home">
+
+        <argument
+            android:name="sessionToken"
+            app:argType="string"
+            android:defaultValue="" />
+
+        <action
+            android:id="@+id/action_home_to_pairing"
+            app:destination="@id/pairingFragment"
+            app:popUpTo="@id/pairingFragment"
+            app:popUpToInclusive="true"
+            app:enterAnim="@anim/slide_in_left"
+            app:exitAnim="@anim/slide_out_right" />
+    </fragment>
+
+</navigation>
