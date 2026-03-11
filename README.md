@@ -23,7 +23,7 @@ If you want to run the builder yourself instead of using the hosted version:
 
 ```bash
 git clone https://github.com/JMTDI/nexussmsbridge
-cd sms-bridge
+cd nexussmsbridge
 pip install -r requirements.txt
 python builder.py
 ```
