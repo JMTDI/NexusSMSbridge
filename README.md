@@ -1,5 +1,4 @@
-# NexusBridge ![GitHub Downloads (latest release)](https://img.shields.io/github/downloads/JMTDI/sms-bridge/latest/total)
-
+# NexusBridge
 A complete SMS Bridge system that connects an Android phone to a web-based messaging UI via a WebSocket relay server.
 
 ## Get Started
